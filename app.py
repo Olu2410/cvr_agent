@@ -266,5 +266,97 @@ def reset_conversation():
 # if __name__ == "__main__":
 #     app.run(debug=True, port=5000)
 
+
+
+@app.route("/telex/a2a", methods=["POST"])
+def telex_a2a():
+    """A2A endpoint for Telex.im integration"""
+    try:
+        data = request.json
+        print("Telex A2A request received:", data)
+        
+        # Extract message from Telex
+        message_text = data.get('message', {}).get('text', '').strip()
+        session_id = data.get('sessionId', 'default-session')
+        
+        # Initialize session for Telex users
+        if 'telex_sessions' not in session:
+            session['telex_sessions'] = {}
+        
+        if session_id not in session['telex_sessions']:
+            session['telex_sessions'][session_id] = {
+                'current_process': 'universal-signup',
+                'current_step': 0,
+                'completed_processes': [],
+                'awaiting_phone': False
+            }
+        
+        # Get session state for this Telex user
+        conversation_state = session['telex_sessions'][session_id]
+        
+        # Process the message using your existing logic
+        if conversation_state['current_process'] == 'universal-signup':
+            response = handle_universal_signup(message_text, conversation_state)
+        elif conversation_state['current_process'] == 'service-selection':
+            response = handle_service_selection(message_text, conversation_state)
+        else:
+            response = handle_specific_service(message_text, conversation_state)
+        
+        # Update session
+        session['telex_sessions'][session_id] = conversation_state
+        
+        # Extract the reply text from the response
+        if hasattr(response, 'json'):
+            reply_data = response.json
+            reply_text = reply_data.get('reply', 'Sorry, I encountered an error.')
+        else:
+            reply_text = response.get('reply', 'Sorry, I encountered an error.')
+        
+        # Format response for Telex A2A
+        telex_response = {
+            "reply": {
+                "text": reply_text
+            },
+            "sessionId": session_id
+        }
+        
+        return jsonify(telex_response)
+        
+    except Exception as e:
+        print(f"Telex A2A error: {e}")
+        error_response = {
+            "reply": {
+                "text": "I apologize, I'm having trouble processing your request. Please try again in a moment."
+            },
+            "sessionId": data.get('sessionId', 'default-session') if 'data' in locals() else 'error-session'
+        }
+        return jsonify(error_response)
+
+@app.route("/telex/webhook", methods=["POST"])
+def telex_webhook():
+    """Webhook for receiving Telex events (delivery status, etc.)"""
+    try:
+        data = request.json
+        print("Telex webhook event:", data)
+        
+        # Handle different webhook events
+        event_type = data.get('type')
+        
+        if event_type == 'message_delivered':
+            print("Message delivered successfully")
+        elif event_type == 'message_read':
+            print("Message was read by user")
+        elif event_type == 'message_failed':
+            print("Message failed to deliver")
+        
+        return jsonify({"status": "success"})
+        
+    except Exception as e:
+        print(f"Telex webhook error: {e}")
+        return jsonify({"status": "error"}), 500
+    
+
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
